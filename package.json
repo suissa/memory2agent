@@ -19,7 +19,7 @@
     "ai",
     "event-sourcing"
   ],
-  "author": "",
+  "author": "vibe2founder",
   "license": "MIT",
   "devDependencies": {
     "@types/node": "^20.10.0",

@@ -1,0 +1,11 @@
+@cucumber/cucumber: true
+formats:
+  - pretty
+  - html:reports/cucumber-report.html
+  - json:reports/cucumber-report.json
+require:
+  - features/steps/*.ts
+  - features/support/*.ts
+import:
+  - features/steps/*.ts
+  - features/support/*.ts

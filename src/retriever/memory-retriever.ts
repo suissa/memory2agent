@@ -11,19 +11,11 @@ import type {
   MemoryType,
 } from '../core/types.js';
 import { MemoryTree } from '../core/memory-tree.js';
+import type { MemoryRetrieverConfig } from '../config/types.js';
+import { DEFAULT_CONFIG } from '../config/types.js';
 
-export interface RetrieverConfig {
-  /** Máximo de resultados */
-  maxResults: number;
-  /** Profundidade máxima de traversal */
-  maxDepth: number;
-  /** Incluir caminho de traversal no resultado */
-  includeTraversalPath: boolean;
-  /** Mínimo de importância para considerar */
-  minImportance: number;
-  /** Usar LLM para matching semântico */
-  useLLM: boolean;
-  /** LLM function para reasoning */
+export interface RetrieverOptions {
+  config?: Partial<MemoryRetrieverConfig>;
   llm?: (prompt: string) => Promise<string>;
 }
 
@@ -36,18 +28,16 @@ export interface RetrievalQuery {
 
 export class MemoryRetriever {
   private tree: MemoryTree;
-  private config: RetrieverConfig;
+  private config: MemoryRetrieverConfig;
+  private llm?: (prompt: string) => Promise<string>;
 
-  constructor(tree: MemoryTree, config?: Partial<RetrieverConfig>) {
+  constructor(tree: MemoryTree, options?: RetrieverOptions) {
     this.tree = tree;
     this.config = {
-      maxResults: 10,
-      maxDepth: 5,
-      includeTraversalPath: true,
-      minImportance: 3,
-      useLLM: false,
-      ...config,
+      ...DEFAULT_CONFIG.retriever,
+      ...options?.config,
     };
+    this.llm = options?.llm;
   }
 
   /**
@@ -154,31 +144,31 @@ export class MemoryRetriever {
     for (const node of nodes) {
       if (node.summary.importance < this.config.minImportance) continue;
 
-      // Calcular score de matching
+      // Calcular score de matching com pesos da config
       let score = 0;
       const matchedKeywords: string[] = [];
 
       for (const keyword of keywords) {
         const kwLower = keyword.toLowerCase();
 
-        // Match no título
+        // Match no título (peso da config)
         if (node.summary.title.toLowerCase().includes(kwLower)) {
-          score += 3;
+          score += this.config.titleMatchWeight;
           matchedKeywords.push(`title:${keyword}`);
         }
 
-        // Match nas keywords
+        // Match nas keywords (peso da config)
         for (const nodeKeyword of node.summary.keywords) {
           if (nodeKeyword.includes(kwLower) || kwLower.includes(nodeKeyword)) {
-            score += 2;
+            score += this.config.keywordMatchWeight;
             matchedKeywords.push(`keyword:${nodeKeyword}`);
           }
         }
 
-        // Match no conteúdo (se for texto)
+        // Match no conteúdo (peso da config)
         if (node.content.type === 'text') {
           if (node.content.value.toLowerCase().includes(kwLower)) {
-            score += 1;
+            score += this.config.contentMatchWeight;
             matchedKeywords.push('content');
           }
         }
@@ -210,7 +200,7 @@ export class MemoryRetriever {
         nodeId: node.id,
         path: node.path,
         content: node.content,
-        relevance: 0.9, // Alta relevância para path exato
+        relevance: this.config.exactPathRelevance, // Config
         explanation: `Path traversal: ${path.join(' → ')}`,
       });
     }
@@ -231,7 +221,7 @@ export class MemoryRetriever {
           nodeId: node.id,
           path: node.path,
           content: node.content,
-          relevance: 0.7,
+          relevance: this.config.typeMatchRelevance, // Config
           explanation: `Type match: ${type}`,
         });
       }
@@ -244,7 +234,7 @@ export class MemoryRetriever {
    * Busca semântica com LLM (matching mais inteligente)
    */
   private async findBySemantic(query: string): Promise<MemoryRetrievalResult[]> {
-    if (!this.config.llm) return [];
+    if (!this.llm || !this.config.useLLM) return [];
 
     const results: MemoryRetrievalResult[] = [];
     const nodes = this.tree.getAllNodes();
@@ -263,7 +253,7 @@ ${nodesSummary}
 Return up to 5 most relevant memory IDs with brief reasoning.`;
 
     try {
-      const response = await this.config.llm(prompt);
+      const response = await this.llm(prompt);
       const matchedIds = this.extractMemoryIdsFromResponse(response);
 
       for (const nodeId of matchedIds) {
@@ -302,9 +292,9 @@ Return up to 5 most relevant memory IDs with brief reasoning.`;
    */
   private async extractKeywords(query: string): Promise<string[]> {
     // Se LLM disponível, usar para extrair keywords
-    if (this.config.llm && this.config.useLLM) {
+    if (this.llm && this.config.useLLM) {
       try {
-        const response = await this.config.llm(
+        const response = await this.llm(
           `Extract 3-5 keywords from: "${query}". Return comma-separated only.`
         );
         return response.split(',').map(k => k.trim()).filter(k => k.length > 0);
@@ -313,7 +303,8 @@ Return up to 5 most relevant memory IDs with brief reasoning.`;
       }
     }
 
-    // Fallback: palavras simples (remover stop words)
+    // Fallback: palavras simples (remover stop words da config)
+    // Nota: stop words poderiam vir da config também
     const stopWords = new Set([
       'the', 'a', 'an', 'is', 'are', 'was', 'were', 'be', 'been',
       'to', 'of', 'and', 'in', 'that', 'for', 'on', 'with', 'at',

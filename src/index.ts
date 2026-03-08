@@ -1,13 +1,14 @@
 /**
  * Memory2Agent - API Principal
  * Integra todos os módulos em uma interface unificada
+ * Everything-as-Code: Configuração centralizada
  */
 
 import { MemoryTree } from './core/memory-tree.js';
-import { MemoryEncoder, type EncoderConfig } from './encoder/memory-encoder.js';
-import { MemoryRouter, type RouterConfig } from './router/memory-router.js';
-import { MemoryRetriever, type RetrieverConfig } from './retriever/memory-retriever.js';
-import { MemoryCompressor, type CompressorConfig } from './compressor/memory-compressor.js';
+import { MemoryEncoder, type EncoderOptions } from './encoder/memory-encoder.js';
+import { MemoryRouter, type RouterOptions } from './router/memory-router.js';
+import { MemoryRetriever, type RetrieverOptions } from './retriever/memory-retriever.js';
+import { MemoryCompressor, type CompressorOptions } from './compressor/memory-compressor.js';
 import type {
   MemoryEvent,
   MemoryContext,
@@ -16,20 +17,23 @@ import type {
   MemoryNode,
   MemoryType,
 } from './core/types.js';
+import type {
+  Memory2AgentFullConfig,
+  Memory2AgentGlobalConfig,
+} from './config/types.js';
+import { DEFAULT_CONFIG, mergeConfig, PRESETS } from './config/types.js';
 
-export interface Memory2AgentConfig {
-  /** Configuração do encoder */
-  encoder?: Partial<EncoderConfig>;
-  /** Configuração do router */
-  router?: Partial<RouterConfig>;
-  /** Configuração do retriever */
-  retriever?: Partial<RetrieverConfig>;
-  /** Configuração do compressor */
-  compressor?: Partial<CompressorConfig>;
-  /** Auto-comprimir memórias periodicamente */
-  autoCompress: boolean;
-  /** Threshold para auto-compressão */
-  autoCompressThreshold: number;
+export interface Memory2AgentOptions {
+  /** Nome da configuração (para identificação) */
+  name?: string;
+  /** Usar preset específico */
+  preset?: keyof typeof PRESETS;
+  /** Configuração completa (override) */
+  config?: Partial<Memory2AgentFullConfig>;
+  /** Configuração global */
+  global?: Partial<Memory2AgentGlobalConfig>;
+  /** Função LLM opcional */
+  llm?: (prompt: string) => Promise<string>;
 }
 
 /**
@@ -37,7 +41,19 @@ export interface Memory2AgentConfig {
  * 
  * @example
  * ```typescript
+ * // Uso básico
  * const memory = new Memory2Agent();
+ * 
+ * // Com preset
+ * const memory = new Memory2Agent({ preset: 'advanced' });
+ * 
+ * // Com config customizada
+ * const memory = new Memory2Agent({
+ *   config: {
+ *     encoder: { maxKeywords: 10 },
+ *     retriever: { maxResults: 20 },
+ *   }
+ * });
  * 
  * // Store event
  * await memory.store({
@@ -59,22 +75,61 @@ export class Memory2Agent {
   private router: MemoryRouter;
   private retriever: MemoryRetriever;
   private compressor: MemoryCompressor;
-  private config: Memory2AgentConfig;
+  private config: Memory2AgentFullConfig;
   private eventCount: number = 0;
+  private llm?: (prompt: string) => Promise<string>;
 
-  constructor(config?: Partial<Memory2AgentConfig>) {
-    this.config = {
-      autoCompress: false,
-      autoCompressThreshold: 50,
-      ...config,
+  constructor(options?: Memory2AgentOptions) {
+    // Carregar configuração base
+    let baseConfig = { ...DEFAULT_CONFIG };
+
+    // Aplicar preset se especificado
+    if (options?.preset) {
+      const preset = PRESETS[options.preset];
+      if (preset) {
+        baseConfig = mergeConfig(baseConfig, preset);
+      }
+    }
+
+    // Aplicar config customizada
+    if (options?.config) {
+      baseConfig = mergeConfig(baseConfig, options.config);
+    }
+
+    // Atualizar nome se especificado
+    if (options?.name) {
+      baseConfig.name = options.name;
+    }
+
+    this.config = baseConfig;
+    this.llm = options?.llm;
+
+    // Inicializar componentes com configs
+    const treeOptions = { config: this.config.tree };
+    this.tree = new MemoryTree(treeOptions);
+
+    const encoderOptions: EncoderOptions = {
+      config: this.config.encoder,
+      llm: this.llm,
     };
+    this.encoder = new MemoryEncoder(encoderOptions);
 
-    // Inicializar componentes
-    this.tree = new MemoryTree();
-    this.encoder = new MemoryEncoder(config?.encoder);
-    this.router = new MemoryRouter(this.tree, config?.router);
-    this.retriever = new MemoryRetriever(this.tree, config?.retriever);
-    this.compressor = new MemoryCompressor(this.tree, config?.compressor);
+    const routerOptions: RouterOptions = {
+      config: this.config.router,
+    };
+    this.router = new MemoryRouter(this.tree, routerOptions);
+
+    const retrieverOptions: RetrieverOptions = {
+      config: this.config.retriever,
+      llm: this.llm,
+    };
+    this.retriever = new MemoryRetriever(this.tree, retrieverOptions);
+
+    const compressorOptions: CompressorOptions = {
+      config: this.config.compressor,
+      llm: this.llm,
+    };
+    this.compressor = new MemoryCompressor(this.tree, compressorOptions);
   }
 
   /**
@@ -103,7 +158,7 @@ export class Memory2Agent {
     this.eventCount++;
 
     // Auto-compressão se habilitado
-    if (this.config.autoCompress && this.eventCount >= this.config.autoCompressThreshold) {
+    if (this.config.global.autoCompress && this.eventCount >= this.config.global.autoCompressThreshold) {
       await this.compressor.autoCompress();
       this.eventCount = 0;
     }
@@ -192,7 +247,7 @@ export class Memory2Agent {
       eventCount: this.eventCount,
     };
 
-    if (this.config.autoCompress) {
+    if (this.config.global.autoCompress) {
       return {
         ...stats,
         compression: this.compressor.getCompressionStats(),
@@ -232,34 +287,41 @@ export class Memory2Agent {
   }
 
   /**
-   * Atualiza configurações
+   * Obtém configuração atual
    */
-  updateConfig(config: Partial<Memory2AgentConfig>): void {
-    this.config = { ...this.config, ...config };
+  getConfig(): Memory2AgentFullConfig {
+    return { ...this.config };
   }
 
   /**
    * Define função LLM para encoding/retrieval
    */
   setLLM(llm: (prompt: string) => Promise<string>): void {
-    this.encoder = new MemoryEncoder({ ...this.config.encoder, llm });
-    this.router = new MemoryRouter(this.tree, this.config.router);
-    this.retriever = new MemoryRetriever(this.tree, {
-      ...this.config.retriever,
-      llm,
-      useLLM: true,
+    this.llm = llm;
+
+    // Re-inicializar componentes com LLM
+    this.encoder = new MemoryEncoder({
+      config: this.config.encoder,
+      llm: this.llm,
     });
+
+    this.retriever = new MemoryRetriever(this.tree, {
+      config: this.config.retriever,
+      llm: this.llm,
+    });
+
     this.compressor = new MemoryCompressor(this.tree, {
-      ...this.config.compressor,
-      llm,
-      useLLM: true,
+      config: this.config.compressor,
+      llm: this.llm,
     });
   }
 }
 
-// Exportar tipos
+// Exportar tipos e configs
 export * from './core/types.js';
 export * from './encoder/memory-encoder.js';
 export * from './router/memory-router.js';
 export * from './retriever/memory-retriever.js';
 export * from './compressor/memory-compressor.js';
+export * from './config/types.js';
+export * from './config/loader.js';

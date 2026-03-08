@@ -5,18 +5,12 @@
 
 import type { MemoryId, MemoryNode, MemoryContent, MemorySummary, MemoryEvent } from '../core/types.js';
 import { MemoryTree } from '../core/memory-tree.js';
+import type { MemoryCompressorConfig } from '../config/types.js';
+import { DEFAULT_CONFIG } from '../config/types.js';
 
-export interface CompressorConfig {
-  /** Número mínimo de eventos para compressão */
-  minEvents: number;
-  /** Número máximo de eventos para comprimir de uma vez */
-  maxEvents: number;
-  /** Usar LLM para sumarização */
-  useLLM: boolean;
-  /** LLM function */
+export interface CompressorOptions {
+  config?: Partial<MemoryCompressorConfig>;
   llm?: (prompt: string) => Promise<string>;
-  /** Auto-comprimir quando threshold for atingido */
-  autoCompress: boolean;
 }
 
 export interface CompressionGroup {
@@ -36,17 +30,16 @@ export interface CompressionResult {
 
 export class MemoryCompressor {
   private tree: MemoryTree;
-  private config: CompressorConfig;
+  private config: MemoryCompressorConfig;
+  private llm?: (prompt: string) => Promise<string>;
 
-  constructor(tree: MemoryTree, config?: Partial<CompressorConfig>) {
+  constructor(tree: MemoryTree, options?: CompressorOptions) {
     this.tree = tree;
     this.config = {
-      minEvents: 5,
-      maxEvents: 20,
-      useLLM: false,
-      autoCompress: false,
-      ...config,
+      ...DEFAULT_CONFIG.compressor,
+      ...options?.config,
     };
+    this.llm = options?.llm;
   }
 
   /**
@@ -115,7 +108,8 @@ export class MemoryCompressor {
       {
         title: summary.title,
         keywords: summary.keywords,
-        importance: Math.min(10, summary.importance + 1), // Comprimidas têm maior importância
+        // Importância base + boost da config
+        importance: Math.min(10, summary.importance + this.config.compressedImportanceBoost),
       }
     );
 
@@ -229,7 +223,7 @@ export class MemoryCompressor {
     group: CompressionGroup
   ): Promise<MemorySummary> {
     // Se LLM disponível, usar para gerar summary
-    if (this.config.llm && this.config.useLLM) {
+    if (this.llm && this.config.useLLM) {
       const eventsText = group.events
         .map(e => JSON.stringify(e.data))
         .join('\n');
@@ -240,12 +234,12 @@ ${eventsText}
 Return JSON: { title: string, keywords: string[], importance: number }`;
 
       try {
-        const response = await this.config.llm(prompt);
+        const response = await this.llm(prompt);
         const parsed = JSON.parse(response);
         return {
-          title: parsed.title || 'Compressed Memory',
+          title: parsed.title || `${this.config.compressedTitlePrefix} Memory`,
           keywords: parsed.keywords || [],
-          importance: parsed.importance || 7,
+          importance: parsed.importance || this.config.compressedImportanceBase,
           createdAt: new Date(),
           updatedAt: new Date(),
         };
@@ -256,9 +250,9 @@ Return JSON: { title: string, keywords: string[], importance: number }`;
 
     // Método determinístico
     return {
-      title: `Compressed: ${group.events.length} events`,
+      title: `${this.config.compressedTitlePrefix} ${group.events.length} events`,
       keywords: this.extractCommonKeywords(group.events),
-      importance: 7,
+      importance: this.config.compressedImportanceBase,
       createdAt: new Date(),
       updatedAt: new Date(),
     };
@@ -271,7 +265,7 @@ Return JSON: { title: string, keywords: string[], importance: number }`;
     group: CompressionGroup
   ): Promise<MemoryContent> {
     // Se LLM disponível, criar resumo estruturado
-    if (this.config.llm && this.config.useLLM) {
+    if (this.llm && this.config.useLLM) {
       const eventsText = group.events
         .map(e => JSON.stringify(e.data))
         .join('\n');
@@ -282,7 +276,7 @@ ${eventsText}
 Return a concise paragraph summarizing the key points.`;
 
       try {
-        const response = await this.config.llm(prompt);
+        const response = await this.llm(prompt);
         return {
           type: 'text',
           value: response,

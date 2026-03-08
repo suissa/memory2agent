@@ -1,0 +1,69 @@
+{
+  "$schema": "./config-schema.json",
+  "name": "custom-config",
+  "version": "1.0.0",
+  
+  "tree": {
+    "rootId": "root",
+    "rootTitle": "Agent Memory",
+    "rootType": "semantic",
+    "rootImportance": 10,
+    "rootKeywords": ["agent", "memory"]
+  },
+
+  "encoder": {
+    "autoKeywords": true,
+    "autoImportance": true,
+    "maxKeywords": 7,
+    "baseImportance": 5,
+    "proceduralImportanceBoost": 2,
+    "decisionImportanceBoost": 3,
+    "idPrefix": "mem",
+    "eventTypeToMemoryType": {
+      "message": "episodic",
+      "decision": "semantic",
+      "procedure": "procedural"
+    }
+  },
+
+  "router": {
+    "autoCreateCategories": true,
+    "maxSiblings": 8,
+    "useLLM": false,
+    "typeRootPrefix": "root",
+    "defaultRoutingConfidence": 0.5
+  },
+
+  "retriever": {
+    "maxResults": 15,
+    "maxDepth": 5,
+    "includeTraversalPath": true,
+    "minImportance": 3,
+    "useLLM": false,
+    "titleMatchWeight": 3,
+    "keywordMatchWeight": 2,
+    "contentMatchWeight": 1,
+    "exactPathRelevance": 0.9,
+    "typeMatchRelevance": 0.7
+  },
+
+  "compressor": {
+    "minEvents": 5,
+    "maxEvents": 20,
+    "useLLM": false,
+    "autoCompress": true,
+    "compressedImportanceBase": 7,
+    "compressedImportanceBoost": 1,
+    "compressedTitlePrefix": "Summary:"
+  },
+
+  "global": {
+    "autoCompress": true,
+    "autoCompressThreshold": 50,
+    "enableLogging": true,
+    "logLevel": "info",
+    "enablePersistence": true,
+    "persistencePath": "./data/memory.json",
+    "autoSaveInterval": 60000
+  }
+}

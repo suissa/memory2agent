@@ -6,14 +6,11 @@
 import type { MemoryId, MemoryType, MemoryNode, MemorySummary } from '../core/types.js';
 import { MemoryTree } from '../core/memory-tree.js';
 import type { EncodedMemory } from '../encoder/memory-encoder.js';
+import type { MemoryRouterConfig } from '../config/types.js';
+import { DEFAULT_CONFIG } from '../config/types.js';
 
-export interface RouterConfig {
-  /** Criar automaticamente categorias se não existirem */
-  autoCreateCategories: boolean;
-  /** Máximo de irmãos antes de sugerir sub-categorização */
-  maxSiblings: number;
-  /** Usar LLM para decisões de roteamento */
-  useLLM: boolean;
+export interface RouterOptions {
+  config?: Partial<MemoryRouterConfig>;
 }
 
 export interface RoutingDecision {
@@ -25,15 +22,13 @@ export interface RoutingDecision {
 
 export class MemoryRouter {
   private tree: MemoryTree;
-  private config: RouterConfig;
+  private config: MemoryRouterConfig;
 
-  constructor(tree: MemoryTree, config?: Partial<RouterConfig>) {
+  constructor(tree: MemoryTree, options?: RouterOptions) {
     this.tree = tree;
     this.config = {
-      autoCreateCategories: true,
-      maxSiblings: 10,
-      useLLM: false,
-      ...config,
+      ...DEFAULT_CONFIG.router,
+      ...options?.config,
     };
   }
 
@@ -192,12 +187,12 @@ export class MemoryRouter {
    * Obtém ou cria raiz de um tipo
    */
   private getOrCreateTypeRoot(type: MemoryType): MemoryNode {
-    const rootId = `root:${type}`;
+    const rootId = `${this.config.typeRootPrefix}:${type}`;
     let node = this.tree.getNode(rootId);
 
     if (!node && this.config.autoCreateCategories) {
       // Criar raiz do tipo
-      const rootNode = this.tree.getNode('root');
+      const rootNode = this.tree.getNode(this.config.typeRootPrefix);
       if (rootNode) {
         node = this.tree.addNode(rootNode.id, 'semantic', {
           type: 'text',

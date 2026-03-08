@@ -9,6 +9,9 @@
     "build": "tsc",
     "dev": "tsc --watch",
     "test": "node --loader ts-node/esm --experimental-specifier-resolution=node tests/index.test.ts",
+    "test:bdd": "cucumber-js --config .cucumber.js",
+    "test:bdd:report": "cucumber-js --config .cucumber.js --format html:reports/cucumber-report.html",
+    "test:all": "npm run test && npm run test:bdd",
     "lint": "eslint src/**/*.ts"
   },
   "keywords": [
@@ -22,12 +25,14 @@
   "author": "vibe2founder",
   "license": "MIT",
   "devDependencies": {
+    "@cucumber/cucumber": "^12.7.0",
+    "@cucumber/pretty-formatter": "^3.2.0",
     "@types/node": "^20.10.0",
-    "typescript": "^5.3.0",
-    "ts-node": "^10.9.2",
-    "eslint": "^8.55.0",
     "@typescript-eslint/eslint-plugin": "^6.13.0",
-    "@typescript-eslint/parser": "^6.13.0"
+    "@typescript-eslint/parser": "^6.13.0",
+    "eslint": "^8.55.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.3.0"
   },
   "exports": {
     ".": {

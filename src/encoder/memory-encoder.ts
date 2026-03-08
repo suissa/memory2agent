@@ -4,16 +4,12 @@
  */
 
 import type { MemoryEvent, MemoryContent, MemorySummary, MemoryType } from '../core/types.js';
+import type { MemoryEncoderConfig } from '../config/types.js';
+import { DEFAULT_CONFIG } from '../config/types.js';
 
-export interface EncoderConfig {
-  /** Modelo LLM para encoding (opcional, pode ser mockado) */
+export interface EncoderOptions {
+  config?: Partial<MemoryEncoderConfig>;
   llm?: (prompt: string) => Promise<string>;
-  /** Extrair keywords automaticamente */
-  autoKeywords: boolean;
-  /** Calcular importância automaticamente */
-  autoImportance: boolean;
-  /** Máximo de keywords */
-  maxKeywords: number;
 }
 
 export interface EncodedMemory {
@@ -24,15 +20,15 @@ export interface EncodedMemory {
 }
 
 export class MemoryEncoder {
-  private config: EncoderConfig;
+  private config: MemoryEncoderConfig;
+  private llm?: (prompt: string) => Promise<string>;
 
-  constructor(config?: Partial<EncoderConfig>) {
+  constructor(options?: EncoderOptions) {
     this.config = {
-      autoKeywords: true,
-      autoImportance: true,
-      maxKeywords: 5,
-      ...config,
+      ...DEFAULT_CONFIG.encoder,
+      ...options?.config,
     };
+    this.llm = options?.llm;
   }
 
   /**
@@ -73,7 +69,12 @@ export class MemoryEncoder {
     const eventType = event.type.toLowerCase();
     const dataStr = JSON.stringify(event.data).toLowerCase();
 
-    // Episodic: eventos temporais, interações, mensagens
+    // Usar mapeamento da config
+    if (this.config.eventTypeToMemoryType[eventType]) {
+      return this.config.eventTypeToMemoryType[eventType];
+    }
+
+    // Fallback para padrões
     if (['message', 'interaction', 'conversation', 'user_action'].includes(eventType)) {
       return 'episodic';
     }
@@ -172,14 +173,14 @@ Return ONLY the title.`;
     title: string
   ): Promise<string[]> {
     // Se o LLM está configurado
-    if (this.config.llm) {
+    if (this.llm) {
       const prompt = `Extract ${this.config.maxKeywords} keywords from:
 ${title}
 ${JSON.stringify(event.data)}
 Return comma-separated keywords only.`;
 
       try {
-        const response = await this.config.llm(prompt);
+        const response = await this.llm(prompt);
         return response
           .split(',')
           .map(k => k.trim().toLowerCase())
@@ -208,22 +209,22 @@ Return comma-separated keywords only.`;
    * Calcula importância da memória (0-10)
    */
   private calculateImportance(event: MemoryEvent, type: MemoryType): number {
-    let importance = 5; // Base
+    let importance = this.config.baseImportance; // Base da config
 
     // Metadata confidence
     if (event.metadata?.confidence) {
       importance = event.metadata.confidence * 10;
     }
 
-    // Tipo influencia importância
+    // Tipo influencia importância (boost da config)
     if (type === 'procedural') {
-      importance = Math.min(10, importance + 2);
+      importance = Math.min(10, importance + this.config.proceduralImportanceBoost);
     }
 
-    // Events com decisões são mais importantes
+    // Events com decisões são mais importantes (boost da config)
     const dataStr = JSON.stringify(event.data).toLowerCase();
     if (dataStr.includes('decision') || dataStr.includes('important')) {
-      importance = Math.min(10, importance + 2);
+      importance = Math.min(10, importance + this.config.decisionImportanceBoost);
     }
 
     return Math.round(importance * 10) / 10;
@@ -260,13 +261,13 @@ Return comma-separated keywords only.`;
     };
 
     // Se LLM disponível
-    if (this.config.llm) {
+    if (this.llm) {
       const prompt = `Extract named entities from:
 ${JSON.stringify(event.data)}
 Return JSON: { persons: [], organizations: [], locations: [], concepts: [] }`;
 
       try {
-        const response = await this.config.llm(prompt);
+        const response = await this.llm(prompt);
         return JSON.parse(response);
       } catch {
         // Fallback

@@ -4,21 +4,34 @@
  */
 
 import type { MemoryId, MemoryNode, MemoryType, MemoryContent, MemorySummary, MemoryStatus } from './types.js';
+import type { MemoryTreeConfig } from '../config/types.js';
+import { DEFAULT_CONFIG } from '../config/types.js';
+
+export interface MemoryTreeOptions {
+  config?: Partial<MemoryTreeConfig>;
+}
 
 export class MemoryTree {
   private nodes: Map<MemoryId, MemoryNode> = new Map();
-  private rootId: MemoryId = 'root';
+  private config: MemoryTreeConfig;
+  private rootId: MemoryId;
 
-  constructor() {
+  constructor(options?: MemoryTreeOptions) {
+    this.config = {
+      ...DEFAULT_CONFIG.tree,
+      ...options?.config,
+    };
+    this.rootId = this.config.rootId;
+
     // Criar nó raiz
     this.nodes.set(this.rootId, {
       id: this.rootId,
-      type: 'semantic',
+      type: this.config.rootType,
       status: 'active',
       summary: {
-        title: 'Root',
-        keywords: [],
-        importance: 10,
+        title: this.config.rootTitle,
+        keywords: this.config.rootKeywords,
+        importance: this.config.rootImportance,
         createdAt: new Date(),
         updatedAt: new Date(),
       },
@@ -227,10 +240,11 @@ export class MemoryTree {
   }
 
   /**
-   * Gera ID único para memória
+   * Gera ID único para memória usando prefixo da config
    */
   private generateId(): MemoryId {
-    return `mem_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    const prefix = this.config.idPrefix;
+    return `${prefix}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
   }
 
   /**
@@ -238,15 +252,15 @@ export class MemoryTree {
    */
   clear(): void {
     this.nodes.clear();
-    // Recriar raiz
+    // Recriar raiz com config
     this.nodes.set(this.rootId, {
       id: this.rootId,
-      type: 'semantic',
+      type: this.config.rootType,
       status: 'active',
       summary: {
-        title: 'Root',
-        keywords: [],
-        importance: 10,
+        title: this.config.rootTitle,
+        keywords: this.config.rootKeywords,
+        importance: this.config.rootImportance,
         createdAt: new Date(),
         updatedAt: new Date(),
       },

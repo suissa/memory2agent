@@ -1,6 +1,8 @@
 # memory2agent
 
 > **Vectorless Agent Memory** - Memória estruturada para agentes com retrieval explicável
+>
+> **Everything-as-Code**: Configuração centralizada e externalizada
 
 [![npm version](https://img.shields.io/npm/v/memory2agent.svg)](https://www.npmjs.com/package/memory2agent)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
@@ -29,6 +31,7 @@ A maioria das arquiteturas de agentes usa **vector databases como memória de lo
 | **Estrutura** | Plana | Hierárquica (árvore) |
 | **Determinismo** | Não | Sim |
 | **Tipos Semânticos** | Não | Sim (episodic/semantic/procedural) |
+| **Configuração** | Hardcoded | **Everything-as-Code** |
 
 ---
 
@@ -70,6 +73,83 @@ console.log(results);
 // Context: Obter contexto para LLM
 const context = await memory.context('suggest tools for user');
 console.log(context.summary);
+```
+
+---
+
+## ⚙️ Everything-as-Code
+
+Todas as configurações são externalizadas e podem ser definidas via:
+
+### 1. Presets
+
+```typescript
+import { Memory2Agent, PRESETS } from 'memory2agent';
+
+// Usar preset avançado
+const memory = new Memory2Agent({ preset: 'advanced' });
+
+// Presets disponíveis:
+// - 'minimal': Configuração mínima
+// - 'advanced': Com LLM habilitado
+// - 'eventSourcing': Otimizado para event sourcing
+// - 'debug': Com logs detalhados
+```
+
+### 2. Configuração JSON
+
+```typescript
+import { Memory2Agent, loadConfig } from 'memory2agent';
+
+// Carregar de arquivo JSON
+const { config } = await loadConfig({
+  configPath: './memory2agent.config.json'
+});
+
+const memory = new Memory2Agent({ config });
+```
+
+### 3. Configuração TypeScript
+
+```typescript
+import { Memory2Agent, createConfig } from 'memory2agent';
+
+// Criar configuração customizada
+const config = createConfig({
+  encoder: { maxKeywords: 10 },
+  retriever: { maxResults: 20 },
+  compressor: { minEvents: 3 },
+});
+
+const memory = new Memory2Agent({ config });
+```
+
+### 4. Configuração Completa
+
+```typescript
+const memory = new Memory2Agent({
+  name: 'my-agent',
+  config: {
+    tree: {
+      rootId: 'agent',
+      rootTitle: 'My Agent Memory',
+      idPrefix: 'mem',
+    },
+    encoder: {
+      autoKeywords: true,
+      maxKeywords: 7,
+      baseImportance: 5,
+    },
+    retriever: {
+      maxResults: 15,
+      titleMatchWeight: 3,
+    },
+    global: {
+      autoCompress: true,
+      autoCompressThreshold: 50,
+    }
+  }
+});
 ```
 
 ---
@@ -132,32 +212,73 @@ const memory = new Memory2Agent(config?: Memory2AgentConfig);
 
 ## 🔧 Configuração
 
+### Estrutura de Configuração
+
 ```typescript
-const memory = new Memory2Agent({
-  encoder: {
-    autoKeywords: true,      // Extrair keywords automaticamente
-    autoImportance: true,    // Calcular importância
-    maxKeywords: 5,
-  },
-  router: {
-    autoCreateCategories: true,  // Criar categorias automaticamente
-    maxSiblings: 10,             // Máximo de irmãos antes de sub-categorizar
-  },
-  retriever: {
-    maxResults: 10,
-    maxDepth: 5,
-    minImportance: 3,
-    useLLM: false,           // Usar LLM para matching semântico
-  },
-  compressor: {
-    minEvents: 5,            // Mínimo de eventos para compressão
-    useLLM: false,           // Usar LLM para sumarização
-    autoCompress: false,     // Auto-comprimir periodicamente
-  },
-  autoCompress: false,
-  autoCompressThreshold: 50,
-});
+interface Memory2AgentFullConfig {
+  name?: string;
+  version?: string;
+  tree: MemoryTreeConfig;       // Configuração da árvore
+  encoder: MemoryEncoderConfig; // Configuração do encoder
+  router: MemoryRouterConfig;   // Configuração do router
+  retriever: MemoryRetrieverConfig; // Configuração do retriever
+  compressor: MemoryCompressorConfig; // Configuração do compressor
+  global: Memory2AgentGlobalConfig;   // Configuração global
+}
 ```
+
+### Opções de Configuração
+
+#### Tree Config
+
+| Opção | Tipo | Default | Descrição |
+|-------|------|---------|-----------|
+| `rootId` | string | 'root' | ID do nó raiz |
+| `rootTitle` | string | 'Root' | Título do nó raiz |
+| `rootType` | string | 'semantic' | Tipo do nó raiz |
+| `rootImportance` | number | 10 | Importância do root |
+| `idPrefix` | string | 'mem' | Prefixo para IDs |
+
+#### Encoder Config
+
+| Opção | Tipo | Default | Descrição |
+|-------|------|---------|-----------|
+| `autoKeywords` | boolean | true | Extrair keywords automaticamente |
+| `autoImportance` | boolean | true | Calcular importância |
+| `maxKeywords` | number | 5 | Máximo de keywords |
+| `baseImportance` | number | 5 | Importância base |
+| `proceduralImportanceBoost` | number | 2 | Boost para procedural |
+| `decisionImportanceBoost` | number | 2 | Boost para decisões |
+
+#### Retriever Config
+
+| Opção | Tipo | Default | Descrição |
+|-------|------|---------|-----------|
+| `maxResults` | number | 10 | Máximo de resultados |
+| `maxDepth` | number | 5 | Profundidade máxima |
+| `minImportance` | number | 3 | Importância mínima |
+| `titleMatchWeight` | number | 3 | Peso para título |
+| `keywordMatchWeight` | number | 2 | Peso para keywords |
+| `contentMatchWeight` | number | 1 | Peso para conteúdo |
+
+#### Compressor Config
+
+| Opção | Tipo | Default | Descrição |
+|-------|------|---------|-----------|
+| `minEvents` | number | 5 | Mínimo para compressão |
+| `maxEvents` | number | 20 | Máximo para compressão |
+| `autoCompress` | boolean | false | Auto-comprimir |
+| `compressedImportanceBase` | number | 7 | Importância base |
+
+#### Global Config
+
+| Opção | Tipo | Default | Descrição |
+|-------|------|---------|-----------|
+| `autoCompress` | boolean | false | Auto-comprimir |
+| `autoCompressThreshold` | number | 50 | Threshold |
+| `enablePersistence` | boolean | false | Habilitar persistência |
+| `persistencePath` | string | './memory.json' | Path do arquivo |
+| `autoSaveInterval` | number | 60000 | Intervalo em ms |
 
 ---
 
@@ -339,6 +460,42 @@ npm test
 
 ---
 
+## 🧪 Testes
+
+### Testes Unitários
+
+```bash
+npm run test
+```
+
+### Testes BDD (Behavior-Driven Development)
+
+```bash
+# Rodar todos os testes BDD
+npm run test:bdd
+
+# Com relatório HTML
+npm run test:bdd:report
+
+# Todos os testes (unitários + BDD)
+npm run test:all
+```
+
+#### Features BDD
+
+| Feature | Cenários | Descrição |
+|---------|----------|-----------|
+| `store-events.feature` | 8 | Armazenamento de eventos |
+| `query-retrieval.feature` | 12 | Query e retrieval vectorless |
+| `context-building.feature` | 8 | Construção de contexto para LLM |
+| `config.feature` | 16 | Configuração Everything-as-Code |
+| `compression.feature` | 12 | Compressão de memórias |
+| **Total** | **56** | **185 steps** |
+
+Veja mais detalhes em [features/README.md](features/README.md).
+
+---
+
 ## 🛠️ Desenvolvimento
 
 ```bash
@@ -353,6 +510,15 @@ npm run build
 
 # Dev watch
 npm run dev
+
+# Test (unitários)
+npm run test
+
+# Test (BDD)
+npm run test:bdd
+
+# Test (todos)
+npm run test:all
 ```
 
 ---
